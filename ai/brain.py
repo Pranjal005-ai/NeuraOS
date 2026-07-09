@@ -1,7 +1,8 @@
 """
-Project Ved
-Robot Brain
+brain.py
+Decision engine for Project Ved
 """
+
 
 class Brain:
 
@@ -9,20 +10,73 @@ class Brain:
 
         command = command.lower()
 
-        if "forward" in command:
+        # ========================
+        # MOVEMENT
+        # ========================
+
+        if any(word in command for word in [
+            "forward",
+            "go forward",
+            "move forward",
+            "आगे"
+        ]):
             return "MOVE_FORWARD"
 
-        elif "back" in command:
+        if any(word in command for word in [
+            "back",
+            "backward",
+            "पीछे"
+        ]):
             return "MOVE_BACKWARD"
 
-        elif "left" in command:
+        if any(word in command for word in [
+            "left",
+            "बाएं"
+        ]):
             return "TURN_LEFT"
 
-        elif "right" in command:
+        if any(word in command for word in [
+            "right",
+            "दाएं"
+        ]):
             return "TURN_RIGHT"
 
-        elif "stop" in command:
+        if any(word in command for word in [
+            "stop",
+            "रुको"
+        ]):
             return "STOP"
 
-        else:
-            return "CHAT"
+        # ========================
+        # VISION
+        # ========================
+
+        if any(word in command for word in [
+
+            "what do you see",
+            "look around",
+            "describe",
+            "camera",
+            "who is in front"
+
+        ]):
+
+            return "VISION"
+
+        # ========================
+        # MEMORY
+        # ========================
+
+        if "remember" in command:
+
+            return "MEMORY_SAVE"
+
+        if "what do you remember" in command:
+
+            return "MEMORY_READ"
+
+        # ========================
+        # DEFAULT
+        # ========================
+
+        return "CHAT"
