@@ -17,6 +17,14 @@ from skills.about import about
 from skills.time_skill import current_time
 from skills.vision import see
 
+from motion.motor_controller import (
+    forward,
+    backward,
+    left,
+    right,
+    stop
+)
+
 
 brain = Brain()
 memory = Memory()
@@ -69,6 +77,25 @@ class Assistant:
             return current_time()
 
         # =====================================
+        # VISION
+        # =====================================
+
+        elif (
+
+            "what do you see" in command
+            or "what can you see" in command
+            or "look around" in command
+            or "describe this" in command
+            or "describe the room" in command
+            or "who is in front of you" in command
+
+        ):
+
+            print("🟢 Vision Skill")
+
+            return see()
+
+        # =====================================
         # DECISION ENGINE
         # =====================================
 
@@ -92,7 +119,7 @@ class Assistant:
 
             return (
                 f"I'll remember that. "
-                f"Your {key.replace('_',' ')} is {value}."
+                f"Your {key.replace('_', ' ')} is {value}."
             )
 
         # =====================================
@@ -108,25 +135,6 @@ class Assistant:
             return memory_answer
 
         # =====================================
-        # VISION
-        # =====================================
-
-        if (
-
-            "what do you see" in command
-            or "what can you see" in command
-            or "look around" in command
-            or "describe this" in command
-            or "describe the room" in command
-            or "who is in front of you" in command
-
-        ):
-
-            print("🟢 Vision Skill")
-
-            return see()
-
-        # =====================================
         # MOVEMENT
         # =====================================
 
@@ -134,11 +142,15 @@ class Assistant:
 
             print("🟢 Move Forward")
 
+            forward()
+
             return "Moving Forward."
 
         elif decision == "MOVE_BACKWARD":
 
             print("🟢 Move Backward")
+
+            backward()
 
             return "Moving Backward."
 
@@ -146,17 +158,23 @@ class Assistant:
 
             print("🟢 Turn Left")
 
+            left()
+
             return "Turning Left."
 
         elif decision == "TURN_RIGHT":
 
             print("🟢 Turn Right")
 
+            right()
+
             return "Turning Right."
 
         elif decision == "STOP":
 
             print("🟢 Stop")
+
+            stop()
 
             return "Stopping."
 
@@ -168,7 +186,9 @@ class Assistant:
 
             print("🟢 ChatGPT")
 
-            return ask_ai(command, session)
+            reply = ask_ai(command, session)
+
+            return reply
 
         # =====================================
         # UNKNOWN

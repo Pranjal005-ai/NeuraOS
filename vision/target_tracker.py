@@ -1,23 +1,31 @@
-TARGET = None
+"""
+target_tracker.py
 
-def lock_target(name):
+Keeps track of which person Ved should follow.
+"""
 
-    global TARGET
-
-    TARGET = name
-
-    print(f"🔒 Locked on {name}")
+_target_name = None
 
 
-def unlock_target():
+def set_target(name):
 
-    global TARGET
+    global _target_name
 
-    TARGET = None
-
-    print("🔓 Target Released")
+    _target_name = name
 
 
 def get_target():
 
-    return TARGET
+    return _target_name
+
+
+def clear_target():
+
+    global _target_name
+
+    _target_name = None
+
+
+def has_target():
+
+    return _target_name is not None

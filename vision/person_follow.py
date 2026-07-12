@@ -1,14 +1,24 @@
+"""
+person_follow.py
+
+Follows the specific person currently set as the target
+(via target_tracker.set_target), using face recognition
+to confirm identity every frame.
+"""
+
 import cv2
-from ultralytics import YOLO
 
+from vision.face_lock import find_target
 from vision.follow_logic import follow_person
-from vision.target_tracker import get_target
-from vision.face_tracker import get_target
+from vision.target_tracker import has_target, get_target
 
-# -----------------------------
-# Load YOLO
-# -----------------------------
-model = YOLO("yolov8n.pt")
+from motion.motor_controller import (
+    forward,
+    backward,
+    left,
+    right,
+    stop
+)
 
 # -----------------------------
 # Open Camera
@@ -70,64 +80,92 @@ while True:
     )
 
     # -----------------------------
-    # Run YOLO
+    # No target selected
     # -----------------------------
-    results = model(frame, verbose=False)
+    if not has_target():
 
-    best_box = None
-    best_area = 0
-    best_confidence = 0
+        if last_command != "STOP":
 
-    # -----------------------------
-    # Select Largest Person
-    # -----------------------------
-    for box in results[0].boxes:
+            stop()
+            last_command = "STOP"
 
-        cls = int(box.cls[0])
+        cv2.putText(
+            frame,
+            "No target set",
+            (20, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 255),
+            2
+        )
 
-        if cls != 0:
-            continue
+        cv2.imshow("Ved Person Following", frame)
 
-        confidence = float(box.conf[0])
+        if cv2.waitKey(1) == 27:
+            break
 
-        x1, y1, x2, y2 = map(int, box.xyxy[0])
-
-        area = (x2 - x1) * (y2 - y1)
-
-        if area > best_area:
-            best_area = area
-            best_box = (x1, y1, x2, y2)
-            best_confidence = confidence
+        continue
 
     # -----------------------------
-    # Person Found
+    # Find Target
     # -----------------------------
-    if best_box is not None and target is not None:
+    found, box, score = find_target(frame)
 
-        x1, y1, x2, y2 = best_box
+    if found:
 
-        movement = follow_person(best_box, frame_width)
+        x1, y1, x2, y2 = box
 
-        # Show target if locked
-        target = get_target(frame)
+        # NOTE:
+        # follow_logic() currently uses face size instead of body size.
+        # You will tune its thresholds after testing on the real robot.
 
-        if target:
-            cv2.putText(
-                frame,
-                f"Following: {target}",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 255),
-                2
+        movement = follow_person(
+            box,
+            frame_width
+        )
+
+        # -----------------------------
+        # Motor Commands
+        # -----------------------------
+
+        if movement in ("MOVE_FORWARD", "FOLLOW"):
+
+            forward()
+
+        elif movement == "MOVE_BACKWARD":
+
+            backward()
+
+        elif movement in ("TURN_LEFT", "TURN_LEFT_FAST"):
+
+            left()
+
+        elif movement in ("TURN_RIGHT", "TURN_RIGHT_FAST"):
+
+            right()
+
+        elif movement == "STOP":
+
+            stop()
+
+        # -----------------------------
+        # Console Logging
+        # -----------------------------
+
+        if movement != last_command:
+
+            print(
+                "➡",
+                movement,
+                f"(score={score:.2f})"
             )
 
-        # Print only if movement changed
-        if movement != last_command:
-            print("➡", movement)
             last_command = movement
 
-        # Draw bounding box
+        # -----------------------------
+        # Draw Face
+        # -----------------------------
+
         cv2.rectangle(
             frame,
             (x1, y1),
@@ -136,37 +174,68 @@ while True:
             2
         )
 
-        # Draw movement
+        cv2.putText(
+            frame,
+            f"Following: {get_target()} ({score:.2f})",
+            (20, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 255),
+            2
+        )
+
         cv2.putText(
             frame,
             movement,
-            (x1, y1 - 40),
+            (x1, max(y1 - 10, 20)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
             (0, 255, 0),
             2
         )
 
-        # Draw confidence
+    else:
+
+        # -----------------------------
+        # Target Lost
+        # -----------------------------
+
+        if last_command != "STOP":
+
+            stop()
+
+            last_command = "STOP"
+
+            print("➡ STOP (Target Lost)")
+
         cv2.putText(
             frame,
-            f"Confidence: {best_confidence:.2f}",
-            (x1, y1 - 15),
+            f"Searching for {get_target()}...",
+            (20, 35),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 0),
+            1,
+            (0, 0, 255),
             2
         )
 
     # -----------------------------
     # Display
     # -----------------------------
-    cv2.imshow("Ved Person Following", frame)
 
-    key = cv2.waitKey(1)
+    cv2.imshow(
+        "Ved Person Following",
+        frame
+    )
 
-    if key == 27:
+    if cv2.waitKey(1) == 27:
         break
 
+# -----------------------------
+# Cleanup
+# -----------------------------
+
+stop()
+
 cap.release()
+
 cv2.destroyAllWindows()
