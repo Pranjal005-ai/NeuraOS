@@ -1,15 +1,51 @@
 """
+=========================================================
 person_follow.py
 
-Follows the specific person currently set as the target
-(via target_tracker.set_target), using face recognition
-to confirm identity every frame.
+Follows the person currently locked via
+target_tracker.set_target(), confirming identity with
+face recognition.
+
+Run from the PROJECT ROOT:
+    python3 -m vision.person_follow
+
+Author: Pranjal
+
+CHANGES FROM THE PREVIOUS VERSION
+---------------------------------
+1. SAFETY: the whole loop is wrapped in try/finally so
+   the motors ALWAYS stop -- on exception, on ESC, on
+   Ctrl+C. Previously a crash mid-forward() left the
+   gear motors driving with nothing left running to
+   stop them.
+2. Imports find_target (which exists) instead of the
+   old broken name, and takes the bounding box from it.
+3. Uses the shared camera wrapper -- works on the Pi's
+   CSI camera, and does not fight other vision modules
+   for frames.
+4. Recognition runs on a budget, not every frame. On a
+   Pi 5 InsightFace takes ~80ms; calling it every frame
+   caps the control loop at ~12Hz and makes steering
+   sluggish. Between recognitions we coast on the last
+   known box.
+5. Wrapped in a function instead of running at import.
+
+STILL TO DO ON REAL HARDWARE
+----------------------------
+Add a timeout in the ESP32 firmware: if no motor command
+arrives for ~500ms, stop. Software watchdogs cannot
+protect you from a USB cable falling out.
+=========================================================
 """
+
+import time
 
 import cv2
 
+from vision.camera import get_camera, release_camera
+from vision.config import FOLLOW_WATCHDOG_SECONDS
 from vision.face_lock import find_target
-from vision.follow_logic import follow_person
+from vision.follow_logic import follow_person, describe
 from vision.target_tracker import has_target, get_target
 
 from motion.motor_controller import (
@@ -17,225 +53,197 @@ from motion.motor_controller import (
     backward,
     left,
     right,
-    stop
+    stop,
 )
 
-# -----------------------------
-# Open Camera
-# -----------------------------
-cap = cv2.VideoCapture(0)
 
-if not cap.isOpened():
-    print("❌ Camera not found")
-    exit()
+# How often to re-run face recognition (seconds).
+RECOGNITION_INTERVAL = 0.20
 
-print("=" * 50)
-print("VED PERSON FOLLOWING STARTED")
-print("Press ESC to quit")
-print("=" * 50)
+# Give up on a target this long after last seeing them.
+TARGET_LOST_AFTER = 1.0
 
-last_command = ""
 
-while True:
+COMMANDS = {
+    "MOVE_FORWARD": forward,
+    "FOLLOW": forward,
+    "MOVE_BACKWARD": backward,
+    "TURN_LEFT": left,
+    "TURN_LEFT_FAST": left,
+    "TURN_RIGHT": right,
+    "TURN_RIGHT_FAST": right,
+    "STOP": stop,
+}
 
-    ret, frame = cap.read()
 
-    if not ret:
-        continue
-
-    frame_width = frame.shape[1]
-    frame_height = frame.shape[0]
-
-    # -----------------------------
-    # Draw Center Line
-    # -----------------------------
-    cv2.line(
-        frame,
-        (frame_width // 2, 0),
-        (frame_width // 2, frame_height),
-        (255, 0, 0),
-        2
-    )
-
-    # -----------------------------
-    # Draw Dead Zone
-    # -----------------------------
-    left_zone = int(frame_width * 0.45)
-    right_zone = int(frame_width * 0.55)
+def draw_guides(frame, width, height):
 
     cv2.line(
-        frame,
-        (left_zone, 0),
-        (left_zone, frame_height),
-        (0, 255, 255),
-        2
+        frame, (width // 2, 0), (width // 2, height), (255, 0, 0), 1
     )
 
-    cv2.line(
-        frame,
-        (right_zone, 0),
-        (right_zone, frame_height),
-        (0, 255, 255),
-        2
-    )
+    for fraction in (0.40, 0.60):
+        x = int(width * fraction)
+        cv2.line(frame, (x, 0), (x, height), (0, 255, 255), 1)
 
-    # -----------------------------
-    # No target selected
-    # -----------------------------
-    if not has_target():
 
-        if last_command != "STOP":
+def run(show_preview=True):
 
-            stop()
-            last_command = "STOP"
+    cam = get_camera()
 
-        cv2.putText(
-            frame,
-            "No target set",
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 0, 255),
-            2
-        )
+    if cam.wait_for_frame() is None:
+        print("No frames from camera.")
+        return
 
-        cv2.imshow("Ved Person Following", frame)
+    print("=" * 52)
+    print("VED PERSON FOLLOWING")
+    print("Press ESC to quit")
+    print("=" * 52)
 
-        if cv2.waitKey(1) == 27:
-            break
+    last_command = None
+    last_recognition = 0.0
+    last_seen = 0.0
 
-        continue
+    box = None
+    score = 0.0
 
-    # -----------------------------
-    # Find Target
-    # -----------------------------
-    found, box, score = find_target(frame)
+    try:
+        while True:
 
-    if found:
+            frame = cam.get_frame()
 
-        x1, y1, x2, y2 = box
+            if frame is None:
+                continue
 
-        # NOTE:
-        # follow_logic() currently uses face size instead of body size.
-        # You will tune its thresholds after testing on the real robot.
+            height, width = frame.shape[:2]
 
-        movement = follow_person(
-            box,
-            frame_width
-        )
+            if show_preview:
+                draw_guides(frame, width, height)
 
-        # -----------------------------
-        # Motor Commands
-        # -----------------------------
+            ############################################
+            # No target locked
+            ############################################
 
-        if movement in ("MOVE_FORWARD", "FOLLOW"):
+            if not has_target():
 
-            forward()
+                if last_command != "STOP":
+                    stop()
+                    last_command = "STOP"
 
-        elif movement == "MOVE_BACKWARD":
+                if show_preview:
+                    cv2.putText(
+                        frame, "No target set", (20, 35),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (0, 0, 255), 2
+                    )
+                    cv2.imshow("Ved Person Following", frame)
 
-            backward()
+                    if cv2.waitKey(1) & 0xFF == 27:
+                        break
 
-        elif movement in ("TURN_LEFT", "TURN_LEFT_FAST"):
+                continue
 
-            left()
+            ############################################
+            # Recognition, on a budget
+            ############################################
 
-        elif movement in ("TURN_RIGHT", "TURN_RIGHT_FAST"):
+            now = time.time()
 
-            right()
+            if now - last_recognition >= RECOGNITION_INTERVAL:
 
-        elif movement == "STOP":
+                found, new_box, new_score = find_target(frame)
 
-            stop()
+                last_recognition = now
 
-        # -----------------------------
-        # Console Logging
-        # -----------------------------
+                if found:
+                    box = new_box
+                    score = new_score
+                    last_seen = now
+                elif now - last_seen > TARGET_LOST_AFTER:
+                    box = None
+                    score = 0.0
 
-        if movement != last_command:
+            ############################################
+            # Drive
+            ############################################
 
-            print(
-                "➡",
-                movement,
-                f"(score={score:.2f})"
-            )
+            if box is not None:
 
-            last_command = movement
+                command = follow_person(box, width)
 
-        # -----------------------------
-        # Draw Face
-        # -----------------------------
+                COMMANDS.get(command, stop)()
 
-        cv2.rectangle(
-            frame,
-            (x1, y1),
-            (x2, y2),
-            (0, 255, 0),
-            2
-        )
+                if command != last_command:
+                    print(f"-> {describe(command, box, width)}")
+                    last_command = command
 
-        cv2.putText(
-            frame,
-            f"Following: {get_target()} ({score:.2f})",
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 255),
-            2
-        )
+                if show_preview:
 
-        cv2.putText(
-            frame,
-            movement,
-            (x1, max(y1 - 10, 20)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 0),
-            2
-        )
+                    x1, y1, x2, y2 = box
 
-    else:
+                    cv2.rectangle(
+                        frame, (x1, y1), (x2, y2), (0, 255, 0), 2
+                    )
 
-        # -----------------------------
-        # Target Lost
-        # -----------------------------
+                    cv2.putText(
+                        frame,
+                        f"Following {get_target()} ({score:.2f})",
+                        (20, 35),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (0, 255, 255), 2
+                    )
 
-        if last_command != "STOP":
+                    cv2.putText(
+                        frame, command, (x1, max(y1 - 10, 20)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                        (0, 255, 0), 2
+                    )
 
-            stop()
+            else:
 
-            last_command = "STOP"
+                if last_command != "STOP":
+                    stop()
+                    last_command = "STOP"
+                    print("-> STOP (target lost)")
 
-            print("➡ STOP (Target Lost)")
+                if show_preview:
+                    cv2.putText(
+                        frame,
+                        f"Searching for {get_target()}...",
+                        (20, 35),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (0, 0, 255), 2
+                    )
 
-        cv2.putText(
-            frame,
-            f"Searching for {get_target()}...",
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 0, 255),
-            2
-        )
+            ############################################
+            # Watchdog
+            #
+            # If a frame takes longer than this, we have
+            # been driving blind. Stop and reassess.
+            ############################################
 
-    # -----------------------------
-    # Display
-    # -----------------------------
+            if time.time() - now > FOLLOW_WATCHDOG_SECONDS:
+                stop()
+                last_command = "STOP"
+                print("-> STOP (loop stalled)")
 
-    cv2.imshow(
-        "Ved Person Following",
-        frame
-    )
+            if show_preview:
 
-    if cv2.waitKey(1) == 27:
-        break
+                cv2.imshow("Ved Person Following", frame)
 
-# -----------------------------
-# Cleanup
-# -----------------------------
+                if cv2.waitKey(1) & 0xFF == 27:
+                    break
 
-stop()
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
 
-cap.release()
+    finally:
+        # This block is the whole safety story.
+        stop()
+        cv2.destroyAllWindows()
+        release_camera()
+        print("Motors stopped, camera released.")
 
-cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    run()

@@ -1,0 +1,45 @@
+"""
+=========================================================
+File: memory_search.py
+Author: Pranjal
+
+Purpose:
+Search saved memories.
+=========================================================
+"""
+
+from memory.memory import Memory
+
+memory = Memory()
+
+
+def search_memory(command):
+
+    command = command.lower()
+
+    if "my name" in command:
+        value = memory.recall("name")
+        if value:
+            return f"Your name is {value}."
+
+    elif "favorite color" in command:
+        value = memory.recall("favorite_color")
+        if value:
+            return f"Your favorite color is {value}."
+
+    elif "favorite food" in command:
+        value = memory.recall("favorite_food")
+        if value:
+            return f"Your favorite food is {value}."
+
+    elif "city" in command:
+        value = memory.recall("city")
+        if value:
+            return f"You live in {value}."
+
+    elif "birthday" in command:
+        value = memory.recall("birthday")
+        if value:
+            return f"Your birthday is {value}."
+
+    return None

@@ -1,0 +1,16 @@
+{
+  "state": "IDLE",
+  "mode": "GENERAL",
+  "task": "DELIVERY",
+  "context": {
+    "item": "medicine",
+    "room": "309",
+    "patient": "Mrs Shah"
+  },
+  "emergency": false,
+  "emergency_reason": null,
+  "since": 1786443716.487276,
+  "uptime": 5.7,
+  "saved_at": 1786443716.4872918,
+  "clean_shutdown": false
+}

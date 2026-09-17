@@ -20,7 +20,7 @@ except ImportError:
     print("⚠️ pyserial not installed. Running in SIMULATED mode.")
 
 
-PORT = "/dev/ttyUSB0"      # Raspberry Pi default
+PORT = "/dev/cu.usbserial-0001"      # Raspberry Pi default
 BAUDRATE = 115200
 
 _simulated = True

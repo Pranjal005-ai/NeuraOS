@@ -1,12 +1,8 @@
-from vision.camera import capture
-from ai.vision_ai import describe_image
+from skills.vision import see
 
-print("📷 Capturing image...")
+print("Testing Vision...")
+print()
 
-image = capture()
+result = see()
 
-print("🧠 Thinking...")
-
-answer = describe_image(image)
-
-print(answer)
+print(result)

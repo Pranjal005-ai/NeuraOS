@@ -12,12 +12,15 @@ WAKE_WORDS = [
 
 
 def is_awake(command):
+    return True
 
-    command = command.lower()
 
-    for wake in WAKE_WORDS:
 
-        if wake in command:
-            return True
+   #command = command.lower()
 
-    return False
+   # for wake in WAKE_WORDS:
+
+   #     if wake in command:
+   #         return True
+
+   # return False
